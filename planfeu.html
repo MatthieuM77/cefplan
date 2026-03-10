@@ -1,0 +1,1749 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlanFeu - Outil de planification pyrotechnique</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css"/>
+<script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { display: flex; height: 100vh; overflow: hidden; font-family: 'Segoe UI', sans-serif; background: #2f3136; color: #dcddde; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #2f3136; }
+::-webkit-scrollbar-thumb { background: #4a4e54; border-radius: 3px; }
+
+#sidebar {
+  width: 280px; min-width: 280px;
+  background: #36393f;
+  border-right: 1px solid #1e1f22;
+  display: flex; flex-direction: column;
+  overflow-y: auto; overflow-x: hidden;
+  z-index: 1000;
+}
+
+.sidebar-logo {
+  padding: 16px; font-size: 20px; font-weight: 700;
+  color: #fff; border-bottom: 1px solid #1e1f22;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-section { padding: 10px 12px; border-bottom: 1px solid #1e1f22; }
+
+.section-header {
+  text-transform: uppercase; color: #72767d;
+  font-size: 11px; letter-spacing: 1px; font-weight: 600;
+  margin-bottom: 8px; margin-top: 4px;
+}
+
+#search-container { position: relative; }
+#search-input {
+  width: 100%; padding: 8px 36px 8px 10px;
+  background: #2f3136; border: 1px solid #1e1f22;
+  border-radius: 6px; color: #dcddde; font-size: 13px;
+}
+#search-input:focus { outline: none; border-color: #5865f2; }
+#geo-btn {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: #72767d; cursor: pointer; font-size: 16px;
+  padding: 2px;
+}
+#geo-btn:hover { color: #dcddde; }
+#search-suggestions {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 9999;
+  background: #2b2d31; border: 1px solid #1e1f22; border-radius: 0 0 6px 6px;
+  max-height: 180px; overflow-y: auto;
+}
+.suggestion-item {
+  padding: 7px 10px; font-size: 12px; cursor: pointer; color: #dcddde;
+}
+.suggestion-item:hover { background: #3d4147; }
+
+.tool-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+}
+.tool-btn {
+  width: 54px; height: 54px;
+  background: rgba(255,255,255,0.1);
+  border: none; border-radius: 8px;
+  color: #dcddde; font-size: 20px;
+  cursor: pointer; display: flex;
+  flex-direction: column; align-items: center; justify-content: center;
+  position: relative; transition: background 0.15s;
+}
+.tool-btn:hover { background: rgba(255,255,255,0.2); }
+.tool-btn.active { background: #5865f2 !important; }
+.tool-btn .btn-label {
+  font-size: 8px; margin-top: 2px; line-height: 1;
+  text-align: center; color: #b9bbbe;
+}
+.tool-btn .tooltip {
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: #111214; color: #fff; padding: 4px 8px; border-radius: 4px;
+  font-size: 11px; white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity 0.15s; z-index: 9999;
+}
+.tool-btn:hover .tooltip { opacity: 1; }
+
+.file-btn {
+  width: 100%; padding: 8px 12px; margin-bottom: 6px;
+  background: rgba(255,255,255,0.1); border: none; border-radius: 6px;
+  color: #dcddde; font-size: 13px; cursor: pointer; text-align: left;
+  transition: background 0.15s;
+}
+.file-btn:hover { background: rgba(255,255,255,0.2); }
+.file-btn:last-child { margin-bottom: 0; }
+
+#options-btn {
+  margin: 10px 12px; padding: 8px 12px;
+  background: rgba(255,255,255,0.08); border: 1px solid #1e1f22;
+  border-radius: 6px; color: #b9bbbe; font-size: 13px;
+  cursor: pointer; width: calc(100% - 24px); text-align: left;
+}
+#options-btn:hover { background: rgba(255,255,255,0.15); }
+
+#map-wrapper {
+  flex: 1; position: relative; display: flex; flex-direction: column;
+}
+#map { flex: 1; }
+
+#view-switcher {
+  position: absolute; top: 10px; right: 10px; z-index: 1000;
+  display: flex; gap: 4px;
+}
+.view-btn {
+  padding: 6px 12px; background: #36393f; border: 1px solid #1e1f22;
+  border-radius: 4px; color: #dcddde; font-size: 12px; cursor: pointer;
+}
+.view-btn.active { background: #5865f2; border-color: #5865f2; }
+.view-btn:hover:not(.active) { background: #42454a; }
+
+#help-bar {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  z-index: 1000; background: rgba(0,0,0,0.75); color: #fff;
+  padding: 6px 16px; border-radius: 20px; font-size: 12px;
+  pointer-events: none; white-space: nowrap;
+}
+
+#legend-panel {
+  width: 200px; min-width: 200px;
+  background: #36393f; border-left: 1px solid #1e1f22;
+  display: flex; flex-direction: column;
+  transition: width 0.2s, min-width 0.2s;
+  overflow: hidden;
+}
+#legend-panel.collapsed { width: 28px; min-width: 28px; }
+
+#legend-toggle {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  left: -14px; width: 28px; height: 28px;
+  background: #36393f; border: 1px solid #1e1f22; border-radius: 50%;
+  color: #dcddde; cursor: pointer; font-size: 12px;
+  display: flex; align-items: center; justify-content: center; z-index: 5;
+}
+#legend-inner {
+  padding: 12px; overflow-y: auto; flex: 1;
+}
+#legend-panel.collapsed #legend-inner { display: none; }
+#legend-title {
+  font-size: 12px; font-weight: 700; color: #fff; margin-bottom: 10px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.legend-item {
+  display: flex; align-items: flex-start; gap: 6px;
+  margin-bottom: 6px; font-size: 12px; line-height: 1.4;
+}
+.legend-item-emoji { font-size: 14px; flex-shrink: 0; }
+.legend-item-info { color: #b9bbbe; }
+.legend-item-radius { color: #72767d; font-size: 11px; }
+#legend-empty { color: #72767d; font-size: 12px; font-style: italic; }
+
+#legend-wrapper { position: relative; display: flex; }
+
+/* MapLibre popup dark */
+.maplibregl-popup-content {
+  background: #2b2d31 !important;
+  color: #dcddde !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5) !important;
+  padding: 10px 14px !important;
+}
+.maplibregl-popup-tip { border-top-color: #2b2d31 !important; border-bottom-color: #2b2d31 !important; }
+.maplibregl-popup-close-button { color: #72767d !important; font-size: 16px !important; }
+.popup-name { font-weight: 600; font-size: 14px; margin-bottom: 8px; color: #fff; }
+.popup-btn {
+  padding: 4px 10px; border: none; border-radius: 4px;
+  cursor: pointer; font-size: 12px; margin-right: 4px;
+}
+.popup-edit { background: #5865f2; color: #fff; }
+.popup-edit:hover { background: #4752c4; }
+.popup-delete { background: #ed4245; color: #fff; }
+.popup-delete:hover { background: #c03537; }
+
+/* Modals */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  z-index: 10000; display: flex; align-items: center; justify-content: center;
+}
+.modal-box {
+  background: #2f3136; border-radius: 12px;
+  padding: 24px; min-width: 320px; max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+}
+.modal-title { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 16px; }
+.modal-label { font-size: 12px; color: #b9bbbe; margin-bottom: 6px; display: block; }
+.modal-input {
+  width: 100%; padding: 8px 10px; background: #36393f;
+  border: 1px solid #1e1f22; border-radius: 6px;
+  color: #dcddde; font-size: 14px; margin-bottom: 14px;
+}
+.modal-input:focus { outline: none; border-color: #5865f2; }
+.color-swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.color-swatch {
+  width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; transition: transform 0.1s;
+}
+.color-swatch:hover { transform: scale(1.15); }
+.color-swatch.selected { border-color: #fff; transform: scale(1.15); }
+.modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+.modal-cancel {
+  padding: 8px 16px; background: rgba(255,255,255,0.1);
+  border: none; border-radius: 6px; color: #dcddde; cursor: pointer;
+}
+.modal-cancel:hover { background: rgba(255,255,255,0.2); }
+.modal-confirm {
+  padding: 8px 16px; background: #5865f2;
+  border: none; border-radius: 6px; color: #fff; cursor: pointer;
+}
+.modal-confirm:hover { background: #4752c4; }
+select.modal-input { cursor: pointer; }
+
+/* MapLibre override */
+.maplibregl-canvas { cursor: inherit !important; }
+</style>
+</head>
+<body>
+<!-- Sidebar -->
+<div id="sidebar">
+  <div class="sidebar-logo">🎆 PlanFeu v2.0</div>
+
+  <div class="sidebar-section">
+    <div class="section-header">Recherche</div>
+    <div id="search-container">
+      <input type="text" id="search-input" placeholder="Chercher un lieu..." autocomplete="off"/>
+      <button id="geo-btn" title="Ma position">📍</button>
+      <div id="search-suggestions"></div>
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="section-header">Icônes</div>
+    <div class="tool-grid">
+      <button class="tool-btn" id="btn-artifice" data-mode="artificeMode">
+        🎆<span class="btn-label">Artifice</span>
+        <span class="tooltip">Ajouter un artifice</span>
+      </button>
+      <button class="tool-btn" id="btn-zone" data-mode="zoneMode">
+        👥<span class="btn-label">Zone pub.</span>
+        <span class="tooltip">Zone publique</span>
+      </button>
+      <button class="tool-btn" id="btn-interdit" data-mode="interditMode">
+        🚫<span class="btn-label">Interdit</span>
+        <span class="tooltip">Zone interdite</span>
+      </button>
+      <button class="tool-btn" id="btn-barriere" data-mode="barriereMode">
+        🪚<span class="btn-label">Barrière</span>
+        <span class="tooltip">Ajouter une barrière</span>
+      </button>
+      <button class="tool-btn" id="btn-surveillance" data-mode="surveillanceMode">
+        👁️<span class="btn-label">Surveillance</span>
+        <span class="tooltip">Point de surveillance</span>
+      </button>
+      <button class="tool-btn" id="btn-extincteur" data-mode="extincteurMode">
+        🧯<span class="btn-label">Extincteur</span>
+        <span class="tooltip">Extincteur</span>
+      </button>
+      <button class="tool-btn" id="btn-pointEau" data-mode="pointEauMode">
+        💧<span class="btn-label">Eau</span>
+        <span class="tooltip">Point d'eau</span>
+      </button>
+      <button class="tool-btn" id="btn-secours" data-mode="secoursMode">
+        ⛑️<span class="btn-label">Secours</span>
+        <span class="tooltip">Poste de secours</span>
+      </button>
+      <button class="tool-btn" id="btn-accesSecours" data-mode="accesSecoursMode">
+        ➡️<span class="btn-label">Accès sec.</span>
+        <span class="tooltip">Accès secours</span>
+      </button>
+      <button class="tool-btn" id="btn-marqueur" data-mode="marqueurMode">
+        📍<span class="btn-label">Marqueur</span>
+        <span class="tooltip">Marqueur libre</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="section-header">Outils</div>
+    <div class="tool-grid">
+      <button class="tool-btn" id="btn-mesure" data-mode="mesureMode">
+        📏<span class="btn-label">Mesure</span>
+        <span class="tooltip">Mesurer une distance</span>
+      </button>
+      <button class="tool-btn" id="btn-customZone" data-mode="customZoneMode">
+        🟦<span class="btn-label">Zone pers.</span>
+        <span class="tooltip">Zone personnalisée</span>
+      </button>
+      <button class="tool-btn" id="btn-customLine" data-mode="customLineMode">
+        ✏️<span class="btn-label">Ligne pers.</span>
+        <span class="tooltip">Ligne personnalisée</span>
+      </button>
+      <button class="tool-btn" id="btn-effacer" data-mode="none">
+        🗑️<span class="btn-label">Effacer</span>
+        <span class="tooltip">Tout effacer</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="section-header">Fichiers</div>
+    <button class="file-btn" id="btn-save">💾 Sauvegarder le plan</button>
+    <button class="file-btn" id="btn-load">📂 Charger un plan</button>
+    <button class="file-btn" id="btn-pdf">📄 Exporter en PDF</button>
+    <input type="file" id="file-input" accept=".json" style="display:none"/>
+  </div>
+
+  <button id="options-btn">⚙️ Options</button>
+</div>
+
+<!-- Map wrapper -->
+<div id="map-wrapper">
+  <div id="map"></div>
+  <div id="view-switcher">
+    <button class="view-btn active" id="btn-plan">Plan</button>
+    <button class="view-btn" id="btn-satellite">Satellite</button>
+  </div>
+  <div id="help-bar">Sélectionnez un outil dans la barre latérale</div>
+</div>
+
+<!-- Legend -->
+<div id="legend-wrapper">
+  <div id="legend-panel">
+    <button id="legend-toggle">◀</button>
+    <div id="legend-inner">
+      <div id="legend-title">Légende</div>
+      <div id="legend-list">
+        <div id="legend-empty">Aucun élément placé</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Options Modal -->
+<div class="modal-overlay" id="options-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-title">Options</div>
+    <label class="modal-label">Unités</label>
+    <select class="modal-input" id="opt-unit">
+      <option value="m">Mètres / Kilomètres</option>
+      <option value="ft">Pieds / Miles</option>
+    </select>
+    <div class="modal-btns">
+      <button class="modal-confirm" id="opt-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Custom element modal -->
+<div class="modal-overlay" id="custom-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-title" id="custom-modal-title">Nouvel élément</div>
+    <label class="modal-label">Nom</label>
+    <input class="modal-input" type="text" id="custom-name" placeholder="Nom de l'élément"/>
+    <label class="modal-label">Couleur</label>
+    <div class="color-swatches" id="color-swatches"></div>
+    <div class="modal-btns">
+      <button class="modal-cancel" id="custom-cancel">Annuler</button>
+      <button class="modal-confirm" id="custom-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit name modal -->
+<div class="modal-overlay" id="edit-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-title">Modifier le nom</div>
+    <label class="modal-label">Nom</label>
+    <input class="modal-input" type="text" id="edit-name"/>
+    <div class="modal-btns">
+      <button class="modal-cancel" id="edit-cancel">Annuler</button>
+      <button class="modal-confirm" id="edit-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// UNITS
+// ============================================================
+let unitMode = 'm';
+
+function formatDistance(meters) {
+  if (unitMode === 'ft') {
+    const ft = meters * 3.28084;
+    if (ft < 1000) return Math.round(ft) + ' ft';
+    return (ft / 5280).toFixed(2) + ' mi';
+  }
+  if (meters < 1000) return Math.round(meters) + ' m';
+  return (meters / 1000).toFixed(2) + ' km';
+}
+
+// ============================================================
+// HAVERSINE DISTANCE
+// ============================================================
+function haversineDistance(lngLat1, lngLat2) {
+  const R = 6371000;
+  const lat1 = lngLat1[1] * Math.PI / 180;
+  const lat2 = lngLat2[1] * Math.PI / 180;
+  const dLat = (lngLat2[1] - lngLat1[1]) * Math.PI / 180;
+  const dLng = (lngLat2[0] - lngLat1[0]) * Math.PI / 180;
+  const a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ============================================================
+// CIRCLE GEOJSON
+// ============================================================
+function makeCircleCoords(center, radiusMeters) {
+  const pts = 64;
+  const coords = [];
+  for (let i = 0; i <= pts; i++) {
+    const angle = (i / pts) * 2 * Math.PI;
+    const dy = radiusMeters / 111320;
+    const dx = radiusMeters / (111320 * Math.cos(center[1] * Math.PI / 180));
+    coords.push([center[0] + dx * Math.cos(angle), center[1] + dy * Math.sin(angle)]);
+  }
+  return coords;
+}
+
+// ============================================================
+// MAP SETUP
+// ============================================================
+const PLAN_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+const SAT_STYLE = {
+  version: 8,
+  sources: {
+    satellite: {
+      type: 'raster',
+      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      tileSize: 256,
+      attribution: '© Esri'
+    }
+  },
+  layers: [{ id: 'satellite-layer', type: 'raster', source: 'satellite' }]
+};
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: PLAN_STYLE,
+  center: [1.888, 46.603],
+  zoom: 6,
+  doubleClickZoom: false
+});
+
+let mapReady = false;
+let currentStyleMode = 'plan'; // 'plan' or 'satellite'
+
+// ============================================================
+// DATA STORE
+// ============================================================
+const elements = {
+  artifices: [], zones: [], interdits: [], barrieres: [],
+  surveillances: [], extincteurs: [], pointsEau: [], secours: [],
+  accesSecours: [], marqueurs: [], mesures: [], customZones: [], customLines: []
+};
+
+const modeConfig = {
+  surveillanceMode: { key: 'surveillances', emoji: '👁️', label: 'Surveillance' },
+  extincteurMode:   { key: 'extincteurs',   emoji: '🧯', label: 'Extincteur' },
+  pointEauMode:     { key: 'pointsEau',     emoji: '💧', label: "Point d'eau" },
+  secoursMode:      { key: 'secours',       emoji: '⛑️', label: 'Secours' },
+  accesSecoursMode: { key: 'accesSecours',  emoji: '➡️', label: 'Accès secours' },
+  marqueurMode:     { key: 'marqueurs',     emoji: '📍', label: 'Marqueur' },
+};
+
+let idCounter = 1;
+function nextId() { return idCounter++; }
+
+const undoStack = [];
+function pushUndo(fn) {
+  undoStack.push(fn);
+  if (undoStack.length > 20) undoStack.shift();
+}
+
+// ============================================================
+// SOURCES & LAYERS (created after map load)
+// ============================================================
+const SOURCE_DEFS = [
+  { id: 'artifices',    type: 'geojson' },
+  { id: 'zones',        type: 'geojson' },
+  { id: 'interdits',    type: 'geojson' },
+  { id: 'barrieres',    type: 'geojson' },
+  { id: 'mesures',      type: 'geojson' },
+  { id: 'customZones',  type: 'geojson' },
+  { id: 'customLines',  type: 'geojson' },
+  { id: 'temp',         type: 'geojson' },
+  { id: 'measureDots',  type: 'geojson' },
+  { id: 'measureLabels','type': 'geojson' },
+];
+
+function emptyFC() { return { type: 'FeatureCollection', features: [] }; }
+
+function initSourcesAndLayers() {
+  SOURCE_DEFS.forEach(def => {
+    if (!map.getSource(def.id)) {
+      map.addSource(def.id, { type: 'geojson', data: emptyFC() });
+    }
+  });
+
+  // Artifices fill
+  if (!map.getLayer('artifices-fill')) {
+    map.addLayer({ id: 'artifices-fill', type: 'fill', source: 'artifices',
+      paint: { 'fill-color': '#ff6b00', 'fill-opacity': 0.2 } });
+    map.addLayer({ id: 'artifices-outline', type: 'line', source: 'artifices',
+      paint: { 'line-color': '#ff6b00', 'line-width': 2 } });
+  }
+
+  // Zones
+  if (!map.getLayer('zones-fill')) {
+    map.addLayer({ id: 'zones-fill', type: 'fill', source: 'zones',
+      paint: { 'fill-color': ['get','color'], 'fill-opacity': 0.25 } });
+    map.addLayer({ id: 'zones-outline', type: 'line', source: 'zones',
+      paint: { 'line-color': ['get','color'], 'line-width': 2 } });
+  }
+
+  // Interdits
+  if (!map.getLayer('interdits-fill')) {
+    map.addLayer({ id: 'interdits-fill', type: 'fill', source: 'interdits',
+      paint: { 'fill-color': '#ed4245', 'fill-opacity': 0.2 } });
+    map.addLayer({ id: 'interdits-outline', type: 'line', source: 'interdits',
+      paint: { 'line-color': '#ed4245', 'line-width': 2, 'line-dasharray': [6, 4] } });
+  }
+
+  // Barrieres
+  if (!map.getLayer('barrieres-line')) {
+    map.addLayer({ id: 'barrieres-line', type: 'line', source: 'barrieres',
+      paint: { 'line-color': ['get','color'], 'line-width': 4 } });
+  }
+
+  // Mesures line
+  if (!map.getLayer('mesures-line')) {
+    map.addLayer({ id: 'mesures-line', type: 'line', source: 'mesures',
+      paint: { 'line-color': '#ff9800', 'line-width': 2, 'line-dasharray': [5, 5] } });
+  }
+
+  // Measure dots
+  if (!map.getLayer('measureDots-circle')) {
+    map.addLayer({ id: 'measureDots-circle', type: 'circle', source: 'measureDots',
+      paint: { 'circle-radius': 5, 'circle-color': '#ff9800', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' } });
+  }
+
+  // Custom zones
+  if (!map.getLayer('customZones-fill')) {
+    map.addLayer({ id: 'customZones-fill', type: 'fill', source: 'customZones',
+      paint: { 'fill-color': ['get','color'], 'fill-opacity': 0.25 } });
+    map.addLayer({ id: 'customZones-outline', type: 'line', source: 'customZones',
+      paint: { 'line-color': ['get','color'], 'line-width': 2 } });
+  }
+
+  // Custom lines
+  if (!map.getLayer('customLines-line')) {
+    map.addLayer({ id: 'customLines-line', type: 'line', source: 'customLines',
+      paint: { 'line-color': ['get','color'], 'line-width': 3 } });
+  }
+
+  // Temp preview
+  if (!map.getLayer('temp-fill')) {
+    map.addLayer({ id: 'temp-fill', type: 'fill', source: 'temp',
+      filter: ['==', ['geometry-type'], 'Polygon'],
+      paint: { 'fill-color': ['get','color'], 'fill-opacity': 0.1 } });
+    map.addLayer({ id: 'temp-line', type: 'line', source: 'temp',
+      paint: { 'line-color': ['get','color'], 'line-width': 2, 'line-dasharray': [4, 4] } });
+    map.addLayer({ id: 'temp-dots', type: 'circle', source: 'temp',
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: { 'circle-radius': 4, 'circle-color': '#5865f2', 'circle-stroke-width': 1, 'circle-stroke-color': '#fff' } });
+  }
+
+  // Click handlers on layers
+  setupLayerClickHandlers();
+}
+
+function setSourceData(id, features) {
+  const src = map.getSource(id);
+  if (src) src.setData({ type: 'FeatureCollection', features });
+}
+
+// ============================================================
+// RENDER FUNCTIONS
+// ============================================================
+function renderArtifices() {
+  const features = elements.artifices.map(a => ({
+    type: 'Feature',
+    properties: { id: a.id, name: a.name },
+    geometry: { type: 'Polygon', coordinates: [makeCircleCoords(a.center, a.radius)] }
+  }));
+  setSourceData('artifices', features);
+}
+
+function renderZones() {
+  const features = elements.zones.map(z => ({
+    type: 'Feature',
+    properties: { id: z.id, name: z.name, color: '#57c957' },
+    geometry: { type: 'Polygon', coordinates: [z.coords] }
+  }));
+  setSourceData('zones', features);
+}
+
+function renderInterdits() {
+  const features = elements.interdits.map(z => ({
+    type: 'Feature',
+    properties: { id: z.id, name: z.name },
+    geometry: { type: 'Polygon', coordinates: [z.coords] }
+  }));
+  setSourceData('interdits', features);
+}
+
+function renderBarrieres() {
+  const features = elements.barrieres.map(b => ({
+    type: 'Feature',
+    properties: { id: b.id, name: b.name, color: '#4a4e54' },
+    geometry: { type: 'LineString', coordinates: b.coords }
+  }));
+  setSourceData('barrieres', features);
+}
+
+function renderMesures() {
+  const lineFeatures = elements.mesures.map(ms => ({
+    type: 'Feature',
+    properties: { id: ms.id },
+    geometry: { type: 'LineString', coordinates: ms.points }
+  }));
+  setSourceData('mesures', lineFeatures);
+
+  // dots
+  const dotFeatures = [];
+  const labelFeatures = [];
+  elements.mesures.forEach(ms => {
+    ms.points.forEach(pt => {
+      dotFeatures.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: pt } });
+    });
+    for (let i = 1; i < ms.points.length; i++) {
+      const p1 = ms.points[i-1], p2 = ms.points[i];
+      const dist = haversineDistance(p1, p2);
+      const mid = [(p1[0]+p2[0])/2, (p1[1]+p2[1])/2];
+      labelFeatures.push({
+        type: 'Feature',
+        properties: { label: formatDistance(dist) },
+        geometry: { type: 'Point', coordinates: mid }
+      });
+    }
+  });
+  setSourceData('measureDots', dotFeatures);
+
+  // Labels via markers (DOM overlay)
+  renderMeasureLabels(labelFeatures);
+}
+
+// Measure label markers (DOM)
+let measureLabelMarkers = [];
+function renderMeasureLabels(labelFeatures) {
+  measureLabelMarkers.forEach(m => m.remove());
+  measureLabelMarkers = [];
+  labelFeatures.forEach(f => {
+    const el = document.createElement('div');
+    el.style.cssText = 'background:rgba(0,0,0,0.7);color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;white-space:nowrap;pointer-events:none;';
+    el.textContent = f.properties.label;
+    const m = new maplibregl.Marker({ element: el, anchor: 'center' })
+      .setLngLat(f.geometry.coordinates)
+      .addTo(map);
+    measureLabelMarkers.push(m);
+  });
+}
+
+function renderCustomZones() {
+  const features = elements.customZones.map(z => ({
+    type: 'Feature',
+    properties: { id: z.id, name: z.name, color: z.color },
+    geometry: { type: 'Polygon', coordinates: [z.coords] }
+  }));
+  setSourceData('customZones', features);
+}
+
+function renderCustomLines() {
+  const features = elements.customLines.map(l => ({
+    type: 'Feature',
+    properties: { id: l.id, name: l.name, color: l.color },
+    geometry: { type: 'LineString', coordinates: l.coords }
+  }));
+  setSourceData('customLines', features);
+}
+
+function renderAll() {
+  renderArtifices();
+  renderZones();
+  renderInterdits();
+  renderBarrieres();
+  renderMesures();
+  renderCustomZones();
+  renderCustomLines();
+  // Re-add emoji markers
+  emojiMarkers.forEach(m => m.mapMarker.addTo(map));
+}
+
+// ============================================================
+// EMOJI MARKERS (DOM)
+// ============================================================
+const emojiMarkers = []; // { id, mapMarker, obj, key }
+
+function createEmojiMarker(lngLat, emoji, obj, key) {
+  const el = document.createElement('div');
+  el.textContent = emoji;
+  el.style.cssText = 'font-size:28px;line-height:1;cursor:pointer;user-select:none;';
+  const marker = new maplibregl.Marker({ element: el, draggable: true, anchor: 'center' })
+    .setLngLat(lngLat)
+    .addTo(map);
+
+  const entry = { id: obj.id, mapMarker: marker, obj, key };
+  emojiMarkers.push(entry);
+
+  marker.on('dragend', () => {
+    const ll = marker.getLngLat();
+    obj.lngLat = [ll.lng, ll.lat];
+    if (key === 'artifices') {
+      obj.center = [ll.lng, ll.lat];
+      renderArtifices();
+    }
+    updateLegend();
+  });
+
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    showPopupForObj(obj, key, [marker.getLngLat().lng, marker.getLngLat().lat]);
+  });
+
+  return marker;
+}
+
+function removeEmojiMarkersForKey(key) {
+  for (let i = emojiMarkers.length - 1; i >= 0; i--) {
+    if (emojiMarkers[i].key === key || emojiMarkers[i].id === key) {
+      emojiMarkers[i].mapMarker.remove();
+      emojiMarkers.splice(i, 1);
+    }
+  }
+}
+
+function removeEmojiMarkerById(id) {
+  for (let i = emojiMarkers.length - 1; i >= 0; i--) {
+    if (emojiMarkers[i].id === id) {
+      emojiMarkers[i].mapMarker.remove();
+      emojiMarkers.splice(i, 1);
+    }
+  }
+}
+
+// ============================================================
+// POPUP
+// ============================================================
+let currentPopup = null;
+
+function closeCurrentPopup() {
+  if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+}
+
+function showPopupForObj(obj, key, lngLat, onUpdate) {
+  closeCurrentPopup();
+  const div = document.createElement('div');
+  div.innerHTML = `<div class="popup-name">${obj.name}</div>`;
+  const editBtn = document.createElement('button');
+  editBtn.className = 'popup-btn popup-edit';
+  editBtn.textContent = 'Modifier';
+  editBtn.addEventListener('click', () => {
+    closeCurrentPopup();
+    openEditModal(obj.name, newName => {
+      obj.name = newName;
+      updateLegend();
+      if (onUpdate) onUpdate();
+    });
+  });
+  const delBtn = document.createElement('button');
+  delBtn.className = 'popup-btn popup-delete';
+  delBtn.textContent = 'Supprimer';
+  delBtn.addEventListener('click', () => {
+    closeCurrentPopup();
+    deleteObj(obj, key);
+  });
+  div.appendChild(editBtn);
+  div.appendChild(delBtn);
+
+  currentPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, className: 'dark-popup' })
+    .setLngLat(lngLat)
+    .setDOMContent(div)
+    .addTo(map);
+}
+
+function deleteObj(obj, key) {
+  const arr = elements[key];
+  if (!arr) return;
+  const idx = arr.indexOf(obj);
+  if (idx >= 0) arr.splice(idx, 1);
+  removeEmojiMarkerById(obj.id);
+  renderAll();
+  updateLegend();
+}
+
+// ============================================================
+// LAYER CLICK HANDLERS
+// ============================================================
+function setupLayerClickHandlers() {
+  const clickableLayers = [
+    { layer: 'artifices-fill', key: 'artifices' },
+    { layer: 'zones-fill', key: 'zones' },
+    { layer: 'interdits-fill', key: 'interdits' },
+    { layer: 'barrieres-line', key: 'barrieres' },
+    { layer: 'mesures-line', key: 'mesures' },
+    { layer: 'customZones-fill', key: 'customZones' },
+    { layer: 'customLines-line', key: 'customLines' },
+  ];
+
+  clickableLayers.forEach(({ layer, key }) => {
+    map.on('click', layer, (e) => {
+      if (currentMode) return;
+      e.preventDefault();
+      const feat = e.features[0];
+      if (!feat) return;
+      const id = feat.properties.id;
+      const obj = elements[key].find(o => o.id === id);
+      if (!obj) return;
+      const coord = e.lngLat;
+      showPopupForObj(obj, key, [coord.lng, coord.lat], () => {
+        renderAll();
+      });
+    });
+    map.on('mouseenter', layer, () => {
+      if (!currentMode) map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', layer, () => {
+      if (!currentMode) map.getCanvas().style.cursor = '';
+    });
+  });
+}
+
+// ============================================================
+// MODE STATE
+// ============================================================
+let currentMode = null;
+let currentBtn = null;
+
+let artificeState = 0;
+let artificeCenter = null;
+
+let polyPoints = [];
+let linePoints = [];
+let measurePoints = [];
+
+let pendingCustomColor = '#5865f2';
+
+function setMode(mode, btn) {
+  cancelCurrentMode();
+  if (currentMode === mode) {
+    currentMode = null; currentBtn = null;
+    updateHelpBar();
+    return;
+  }
+  currentMode = mode;
+  currentBtn = btn;
+  if (btn) {
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  updateHelpBar();
+  map.getCanvas().style.cursor = 'crosshair';
+}
+
+function deactivateMode() {
+  currentMode = null;
+  if (currentBtn) currentBtn.classList.remove('active');
+  currentBtn = null;
+  map.getCanvas().style.cursor = '';
+  updateHelpBar();
+}
+
+function cancelCurrentMode() {
+  artificeState = 0; artificeCenter = null;
+  polyPoints = []; linePoints = [];
+  setSourceData('temp', []);
+  if (currentBtn) currentBtn.classList.remove('active');
+  currentBtn = null;
+  map.getCanvas().style.cursor = '';
+}
+
+function updateHelpBar() {
+  const bar = document.getElementById('help-bar');
+  if (!currentMode) { bar.textContent = 'Sélectionnez un outil dans la barre latérale'; return; }
+  switch(currentMode) {
+    case 'artificeMode':
+      bar.textContent = artificeState === 0
+        ? "Cliquez pour placer le centre de l'artifice"
+        : 'Cliquez pour définir le rayon';
+      break;
+    case 'zoneMode': case 'interditMode': case 'customZoneMode':
+      bar.textContent = 'Cliquez pour ajouter des points — Double-clic ou cliquez près du premier point pour fermer';
+      break;
+    case 'barriereMode': case 'customLineMode':
+      bar.textContent = 'Cliquez pour ajouter des points — Double-clic pour terminer';
+      break;
+    case 'mesureMode':
+      bar.textContent = 'Cliquez pour mesurer — Double-clic pour terminer';
+      break;
+    default:
+      bar.textContent = 'Cliquez sur la carte pour placer';
+  }
+}
+
+// ============================================================
+// TEMP PREVIEW HELPERS
+// ============================================================
+function updateTempPreview(features) {
+  setSourceData('temp', features);
+}
+
+// ============================================================
+// MAP EVENTS
+// ============================================================
+map.on('load', () => {
+  mapReady = true;
+  initSourcesAndLayers();
+  updateLegend();
+});
+
+map.on('click', (e) => {
+  if (!currentMode) return;
+  if (e.defaultPrevented) return;
+  const lngLat = [e.lngLat.lng, e.lngLat.lat];
+
+  switch(currentMode) {
+    case 'artificeMode': {
+      if (artificeState === 0) {
+        artificeCenter = lngLat;
+        artificeState = 1;
+        // Preview: just a dot
+        updateTempPreview([{
+          type: 'Feature',
+          properties: { color: '#ff6b00' },
+          geometry: { type: 'Point', coordinates: lngLat }
+        }]);
+        updateHelpBar();
+      } else {
+        const radius = haversineDistance(artificeCenter, lngLat);
+        updateTempPreview([]);
+        artificeState = 0;
+        finalizeArtifice(artificeCenter, radius);
+      }
+      break;
+    }
+    case 'zoneMode': case 'interditMode': case 'customZoneMode': {
+      if (polyPoints.length >= 3) {
+        const first = map.project([polyPoints[0][0], polyPoints[0][1]]);
+        const click = map.project([lngLat[0], lngLat[1]]);
+        const dx = first.x - click.x, dy = first.y - click.y;
+        if (Math.sqrt(dx*dx + dy*dy) < 15) { closePolygon(); return; }
+      }
+      polyPoints.push(lngLat);
+      refreshPolyPreview(lngLat);
+      break;
+    }
+    case 'barriereMode': case 'customLineMode': {
+      linePoints.push(lngLat);
+      refreshLinePreview(lngLat);
+      break;
+    }
+    case 'mesureMode': {
+      addMeasurePoint(lngLat);
+      break;
+    }
+    default: {
+      if (modeConfig[currentMode]) {
+        placeMarker(currentMode, lngLat);
+      }
+      break;
+    }
+  }
+});
+
+map.on('dblclick', (e) => {
+  if (!currentMode) return;
+  switch(currentMode) {
+    case 'zoneMode': case 'interditMode': case 'customZoneMode':
+      if (polyPoints.length >= 3) closePolygon();
+      break;
+    case 'barriereMode': case 'customLineMode':
+      if (linePoints.length >= 2) closeLine();
+      break;
+    case 'mesureMode':
+      finalizeMeasure();
+      deactivateMode();
+      break;
+  }
+});
+
+map.on('mousemove', (e) => {
+  if (!currentMode) return;
+  const lngLat = [e.lngLat.lng, e.lngLat.lat];
+
+  switch(currentMode) {
+    case 'artificeMode':
+      if (artificeState === 1 && artificeCenter) {
+        const radius = haversineDistance(artificeCenter, lngLat);
+        updateTempPreview([{
+          type: 'Feature',
+          properties: { color: '#ff6b00' },
+          geometry: { type: 'Polygon', coordinates: [makeCircleCoords(artificeCenter, radius)] }
+        }, {
+          type: 'Feature',
+          properties: { color: '#ff6b00' },
+          geometry: { type: 'Point', coordinates: artificeCenter }
+        }]);
+      }
+      break;
+    case 'zoneMode': case 'interditMode': case 'customZoneMode':
+      if (polyPoints.length > 0) refreshPolyPreview(lngLat);
+      break;
+    case 'barriereMode': case 'customLineMode':
+      if (linePoints.length > 0) refreshLinePreview(lngLat);
+      break;
+  }
+});
+
+function refreshPolyPreview(cursor) {
+  const color = currentMode === 'zoneMode' ? '#57c957' : currentMode === 'interditMode' ? '#ed4245' : pendingCustomColor;
+  const pts = cursor ? [...polyPoints, cursor] : [...polyPoints];
+  const features = [];
+  if (pts.length >= 3) {
+    features.push({
+      type: 'Feature',
+      properties: { color },
+      geometry: { type: 'Polygon', coordinates: [[...pts, pts[0]]] }
+    });
+  } else if (pts.length >= 2) {
+    features.push({
+      type: 'Feature',
+      properties: { color },
+      geometry: { type: 'LineString', coordinates: pts }
+    });
+  }
+  polyPoints.forEach(pt => features.push({
+    type: 'Feature', properties: { color }, geometry: { type: 'Point', coordinates: pt }
+  }));
+  updateTempPreview(features);
+}
+
+function refreshLinePreview(cursor) {
+  const color = currentMode === 'barriereMode' ? '#4a4e54' : pendingCustomColor;
+  const pts = cursor ? [...linePoints, cursor] : [...linePoints];
+  const features = [];
+  if (pts.length >= 2) {
+    features.push({
+      type: 'Feature',
+      properties: { color },
+      geometry: { type: 'LineString', coordinates: pts }
+    });
+  }
+  linePoints.forEach(pt => features.push({
+    type: 'Feature', properties: { color }, geometry: { type: 'Point', coordinates: pt }
+  }));
+  updateTempPreview(features);
+}
+
+// ============================================================
+// FINALIZE SHAPES
+// ============================================================
+function finalizeArtifice(center, radius) {
+  const id = nextId();
+  const count = elements.artifices.length + 1;
+  const name = `Artifice ${count}`;
+  const obj = { id, center, radius, name, lngLat: center };
+  elements.artifices.push(obj);
+  createEmojiMarker(center, '🎆', obj, 'artifices');
+  renderArtifices();
+  pushUndo(() => {
+    const idx = elements.artifices.indexOf(obj);
+    if (idx >= 0) elements.artifices.splice(idx, 1);
+    removeEmojiMarkerById(obj.id);
+    renderArtifices();
+    updateLegend();
+  });
+  updateLegend();
+}
+
+function finalizePolygon(type, pts, name, color) {
+  const id = nextId();
+  // close polygon: ensure first == last
+  const coords = [...pts];
+  if (coords[0][0] !== coords[coords.length-1][0] || coords[0][1] !== coords[coords.length-1][1]) {
+    coords.push(coords[0]);
+  }
+  let obj, arr;
+  if (type === 'zone') {
+    const count = elements.zones.length + 1;
+    obj = { id, coords, name: name || `Zone pub. ${count}` };
+    elements.zones.push(obj);
+    arr = elements.zones;
+    renderZones();
+  } else if (type === 'interdit') {
+    const count = elements.interdits.length + 1;
+    obj = { id, coords, name: name || `Zone interdite ${count}` };
+    elements.interdits.push(obj);
+    arr = elements.interdits;
+    renderInterdits();
+  } else {
+    const count = elements.customZones.length + 1;
+    obj = { id, coords, name: name || `Zone ${count}`, color };
+    elements.customZones.push(obj);
+    arr = elements.customZones;
+    renderCustomZones();
+  }
+  pushUndo(() => {
+    const idx = arr.indexOf(obj);
+    if (idx >= 0) arr.splice(idx, 1);
+    if (type === 'zone') renderZones();
+    else if (type === 'interdit') renderInterdits();
+    else renderCustomZones();
+    updateLegend();
+  });
+  updateLegend();
+}
+
+function finalizeLine(type, pts, name, color) {
+  const id = nextId();
+  let obj, arr;
+  if (type === 'barriere') {
+    const count = elements.barrieres.length + 1;
+    obj = { id, coords: pts, name: name || `Barrière ${count}` };
+    elements.barrieres.push(obj);
+    arr = elements.barrieres;
+    renderBarrieres();
+  } else {
+    const count = elements.customLines.length + 1;
+    obj = { id, coords: pts, name: name || `Ligne ${count}`, color };
+    elements.customLines.push(obj);
+    arr = elements.customLines;
+    renderCustomLines();
+  }
+  pushUndo(() => {
+    const idx = arr.indexOf(obj);
+    if (idx >= 0) arr.splice(idx, 1);
+    if (type === 'barriere') renderBarrieres();
+    else renderCustomLines();
+    updateLegend();
+  });
+  updateLegend();
+}
+
+function closePolygon() {
+  if (polyPoints.length < 3) return;
+  const pts = [...polyPoints];
+  const mode = currentMode;
+  polyPoints = [];
+  updateTempPreview([]);
+  if (mode === 'customZoneMode') {
+    openCustomModal('zone', null, null, (name, color) => {
+      finalizePolygon('custom', pts, name, color);
+    });
+  } else {
+    finalizePolygon(mode === 'zoneMode' ? 'zone' : 'interdit', pts, null, null);
+  }
+  deactivateMode();
+}
+
+function closeLine() {
+  if (linePoints.length < 2) return;
+  const pts = [...linePoints];
+  const mode = currentMode;
+  linePoints = [];
+  updateTempPreview([]);
+  if (mode === 'customLineMode') {
+    openCustomModal('line', null, null, (name, color) => {
+      finalizeLine('custom', pts, name, color);
+    });
+  } else {
+    finalizeLine('barriere', pts, null, null);
+  }
+  deactivateMode();
+}
+
+// ============================================================
+// MARKERS (emoji)
+// ============================================================
+function placeMarker(mode, lngLat) {
+  const cfg = modeConfig[mode];
+  if (!cfg) return;
+  const id = nextId();
+  const count = elements[cfg.key].length + 1;
+  const name = `${cfg.label} ${count}`;
+  const obj = { id, lngLat, name, emoji: cfg.emoji };
+  elements[cfg.key].push(obj);
+  createEmojiMarker(lngLat, cfg.emoji, obj, cfg.key);
+  pushUndo(() => {
+    const idx = elements[cfg.key].indexOf(obj);
+    if (idx >= 0) elements[cfg.key].splice(idx, 1);
+    removeEmojiMarkerById(obj.id);
+    updateLegend();
+  });
+  updateLegend();
+}
+
+// ============================================================
+// MEASURE
+// ============================================================
+let currentMeasurePoints = [];
+
+function addMeasurePoint(lngLat) {
+  currentMeasurePoints.push(lngLat);
+  // preview
+  const features = currentMeasurePoints.map(pt => ({
+    type: 'Feature', properties: { color: '#ff9800' },
+    geometry: { type: 'Point', coordinates: pt }
+  }));
+  if (currentMeasurePoints.length >= 2) {
+    features.push({
+      type: 'Feature', properties: { color: '#ff9800' },
+      geometry: { type: 'LineString', coordinates: currentMeasurePoints }
+    });
+  }
+  updateTempPreview(features);
+}
+
+function finalizeMeasure() {
+  if (currentMeasurePoints.length < 2) {
+    currentMeasurePoints = [];
+    updateTempPreview([]);
+    return;
+  }
+  let total = 0;
+  for (let i = 1; i < currentMeasurePoints.length; i++) {
+    total += haversineDistance(currentMeasurePoints[i-1], currentMeasurePoints[i]);
+  }
+  const id = nextId();
+  const count = elements.mesures.length + 1;
+  const obj = { id, points: [...currentMeasurePoints], total, name: `Mesure ${count}` };
+  elements.mesures.push(obj);
+  currentMeasurePoints = [];
+  updateTempPreview([]);
+  renderMesures();
+  pushUndo(() => {
+    const idx = elements.mesures.indexOf(obj);
+    if (idx >= 0) elements.mesures.splice(idx, 1);
+    renderMesures();
+    updateLegend();
+  });
+  updateLegend();
+}
+
+// ============================================================
+// LEGEND
+// ============================================================
+function updateLegend() {
+  const list = document.getElementById('legend-list');
+  list.innerHTML = '';
+  let count = 0;
+
+  function addItem(emoji, name, extra) {
+    count++;
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = `<span class="legend-item-emoji">${emoji}</span>
+      <div><div class="legend-item-info">${name}</div>${extra ? `<div class="legend-item-radius">${extra}</div>` : ''}</div>`;
+    list.appendChild(item);
+  }
+
+  elements.artifices.forEach(a => addItem('🎆', a.name, `Rayon: ${formatDistance(a.radius)}`));
+  elements.zones.forEach(z => addItem('👥', z.name, null));
+  elements.interdits.forEach(z => addItem('🚫', z.name, null));
+  elements.barrieres.forEach(b => addItem('🪚', b.name, null));
+  elements.surveillances.forEach(s => addItem('👁️', s.name, null));
+  elements.extincteurs.forEach(e => addItem('🧯', e.name, null));
+  elements.pointsEau.forEach(p => addItem('💧', p.name, null));
+  elements.secours.forEach(s => addItem('⛑️', s.name, null));
+  elements.accesSecours.forEach(a => addItem('➡️', a.name, null));
+  elements.marqueurs.forEach(m => addItem('📍', m.name, null));
+  elements.mesures.forEach(m => addItem('📏', m.name, `Total: ${formatDistance(m.total)}`));
+  elements.customZones.forEach(z => addItem('🟦', z.name, null));
+  elements.customLines.forEach(l => addItem('✏️', l.name, null));
+
+  if (count === 0) {
+    list.innerHTML = '<div id="legend-empty">Aucun élément placé</div>';
+  }
+}
+
+// ============================================================
+// KEYBOARD
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    cancelCurrentMode();
+    currentMode = null;
+    currentMeasurePoints = [];
+    updateTempPreview([]);
+    updateHelpBar();
+    closeCurrentPopup();
+  }
+  if (e.ctrlKey && e.key === 'z') {
+    e.preventDefault();
+    if (undoStack.length > 0) {
+      const fn = undoStack.pop();
+      fn();
+    }
+  }
+});
+
+// ============================================================
+// VIEW SWITCHER
+// ============================================================
+function switchToStyle(style, btnId) {
+  currentStyleMode = btnId === 'btn-plan' ? 'plan' : 'satellite';
+  document.getElementById('btn-plan').classList.toggle('active', btnId === 'btn-plan');
+  document.getElementById('btn-satellite').classList.toggle('active', btnId === 'btn-satellite');
+
+  map.setStyle(style);
+  map.once('styledata', () => {
+    initSourcesAndLayers();
+    renderAll();
+    // Re-add emoji markers that were lost
+    emojiMarkers.forEach(entry => entry.mapMarker.addTo(map));
+  });
+}
+
+document.getElementById('btn-plan').addEventListener('click', function() {
+  if (currentStyleMode === 'plan') return;
+  switchToStyle(PLAN_STYLE, 'btn-plan');
+});
+document.getElementById('btn-satellite').addEventListener('click', function() {
+  if (currentStyleMode === 'satellite') return;
+  switchToStyle(SAT_STYLE, 'btn-satellite');
+});
+
+// ============================================================
+// TOOL BUTTONS
+// ============================================================
+document.querySelectorAll('.tool-btn[data-mode]').forEach(btn => {
+  const mode = btn.dataset.mode;
+  if (mode === 'none') {
+    btn.addEventListener('click', () => {
+      if (confirm('Effacer tous les éléments ?')) clearAll();
+    });
+    return;
+  }
+  btn.addEventListener('click', () => setMode(mode, btn));
+});
+
+function clearAll() {
+  // Remove all emoji markers
+  emojiMarkers.forEach(m => m.mapMarker.remove());
+  emojiMarkers.length = 0;
+  measureLabelMarkers.forEach(m => m.remove());
+  measureLabelMarkers.length = 0;
+
+  Object.keys(elements).forEach(k => elements[k] = []);
+  undoStack.length = 0;
+  currentMeasurePoints = [];
+
+  if (mapReady) {
+    setSourceData('artifices', []);
+    setSourceData('zones', []);
+    setSourceData('interdits', []);
+    setSourceData('barrieres', []);
+    setSourceData('mesures', []);
+    setSourceData('measureDots', []);
+    setSourceData('customZones', []);
+    setSourceData('customLines', []);
+    setSourceData('temp', []);
+  }
+
+  cancelCurrentMode();
+  currentMode = null;
+  updateLegend();
+  updateHelpBar();
+}
+
+// ============================================================
+// LEGEND TOGGLE
+// ============================================================
+const legendPanel = document.getElementById('legend-panel');
+const legendToggle = document.getElementById('legend-toggle');
+legendToggle.addEventListener('click', () => {
+  legendPanel.classList.toggle('collapsed');
+  legendToggle.textContent = legendPanel.classList.contains('collapsed') ? '◀' : '▶';
+});
+
+// ============================================================
+// SEARCH (Nominatim)
+// ============================================================
+const searchInput = document.getElementById('search-input');
+const suggestions = document.getElementById('search-suggestions');
+let searchTimeout;
+
+searchInput.addEventListener('input', function() {
+  clearTimeout(searchTimeout);
+  const q = this.value.trim();
+  if (q.length < 3) { suggestions.innerHTML = ''; return; }
+  searchTimeout = setTimeout(() => nominatimSearch(q), 300);
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') nominatimSearch(searchInput.value.trim());
+  if (e.key === 'Escape') suggestions.innerHTML = '';
+});
+
+async function nominatimSearch(q) {
+  if (!q) return;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`;
+    const res = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
+    const data = await res.json();
+    suggestions.innerHTML = '';
+    data.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'suggestion-item';
+      div.textContent = item.display_name;
+      div.addEventListener('click', () => {
+        map.flyTo({ center: [parseFloat(item.lon), parseFloat(item.lat)], zoom: 14 });
+        suggestions.innerHTML = '';
+        searchInput.value = item.display_name;
+      });
+      suggestions.appendChild(div);
+    });
+  } catch(err) { console.warn('Search error', err); }
+}
+
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('search-container').contains(e.target)) {
+    suggestions.innerHTML = '';
+  }
+});
+
+document.getElementById('geo-btn').addEventListener('click', () => {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(pos => {
+    map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 14 });
+  }, err => console.warn('Geo error', err));
+});
+
+// ============================================================
+// CUSTOM ELEMENT MODAL
+// ============================================================
+const COLORS = ['#5865f2','#57c957','#ed4245','#ff6b00','#ffd700','#00bcd4','#e91e63','#9c27b0','#ff9800','#4a4e54'];
+const colorSwatchesEl = document.getElementById('color-swatches');
+COLORS.forEach(c => {
+  const sw = document.createElement('div');
+  sw.className = 'color-swatch';
+  sw.style.background = c;
+  sw.dataset.color = c;
+  sw.addEventListener('click', () => {
+    document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+    sw.classList.add('selected');
+    pendingCustomColor = c;
+  });
+  colorSwatchesEl.appendChild(sw);
+});
+colorSwatchesEl.children[0].classList.add('selected');
+
+let customModalCallback = null;
+
+function openCustomModal(type, defaultName, defaultColor, callback) {
+  customModalCallback = callback;
+  document.getElementById('custom-name').value = defaultName || '';
+  pendingCustomColor = defaultColor || COLORS[0];
+  document.querySelectorAll('.color-swatch').forEach(s => {
+    s.classList.toggle('selected', s.dataset.color === pendingCustomColor);
+  });
+  document.getElementById('custom-modal-title').textContent =
+    type === 'zone' ? 'Nouvelle zone personnalisée' : 'Nouvelle ligne personnalisée';
+  document.getElementById('custom-modal').style.display = 'flex';
+  document.getElementById('custom-name').focus();
+}
+
+document.getElementById('custom-ok').addEventListener('click', () => {
+  const name = document.getElementById('custom-name').value.trim();
+  document.getElementById('custom-modal').style.display = 'none';
+  if (customModalCallback) {
+    customModalCallback(name || undefined, pendingCustomColor);
+    customModalCallback = null;
+  }
+});
+
+document.getElementById('custom-cancel').addEventListener('click', () => {
+  document.getElementById('custom-modal').style.display = 'none';
+  customModalCallback = null;
+});
+
+document.getElementById('custom-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('custom-ok').click();
+});
+
+// ============================================================
+// EDIT NAME MODAL
+// ============================================================
+let editModalCallback = null;
+
+function openEditModal(currentName, callback) {
+  editModalCallback = callback;
+  document.getElementById('edit-name').value = currentName || '';
+  document.getElementById('edit-modal').style.display = 'flex';
+  const inp = document.getElementById('edit-name');
+  inp.focus(); inp.select();
+}
+
+document.getElementById('edit-ok').addEventListener('click', () => {
+  const name = document.getElementById('edit-name').value.trim();
+  document.getElementById('edit-modal').style.display = 'none';
+  if (editModalCallback && name) { editModalCallback(name); editModalCallback = null; }
+});
+
+document.getElementById('edit-cancel').addEventListener('click', () => {
+  document.getElementById('edit-modal').style.display = 'none';
+  editModalCallback = null;
+});
+
+document.getElementById('edit-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('edit-ok').click();
+  if (e.key === 'Escape') document.getElementById('edit-cancel').click();
+});
+
+// ============================================================
+// OPTIONS MODAL
+// ============================================================
+document.getElementById('options-btn').addEventListener('click', () => {
+  document.getElementById('opt-unit').value = unitMode;
+  document.getElementById('options-modal').style.display = 'flex';
+});
+
+document.getElementById('opt-ok').addEventListener('click', () => {
+  unitMode = document.getElementById('opt-unit').value;
+  document.getElementById('options-modal').style.display = 'none';
+  updateLegend();
+  renderMesures();
+});
+
+document.getElementById('options-modal').addEventListener('click', function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
+
+// ============================================================
+// SAVE / LOAD
+// ============================================================
+document.getElementById('btn-save').addEventListener('click', savePlan);
+document.getElementById('btn-load').addEventListener('click', () => document.getElementById('file-input').click());
+document.getElementById('file-input').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try { loadPlan(JSON.parse(ev.target.result)); }
+    catch(err) { alert('Erreur de chargement du fichier'); }
+  };
+  reader.readAsText(file);
+  this.value = '';
+});
+
+function savePlan() {
+  const simpleMarkerKeys = ['surveillances','extincteurs','pointsEau','secours','accesSecours','marqueurs'];
+  const data = {
+    version: 2,
+    unitMode,
+    elements: {
+      artifices: elements.artifices.map(a => ({ id: a.id, name: a.name, center: a.center, radius: a.radius })),
+      zones: elements.zones.map(z => ({ id: z.id, name: z.name, coords: z.coords })),
+      interdits: elements.interdits.map(z => ({ id: z.id, name: z.name, coords: z.coords })),
+      barrieres: elements.barrieres.map(b => ({ id: b.id, name: b.name, coords: b.coords })),
+      mesures: elements.mesures.map(ms => ({ id: ms.id, name: ms.name, total: ms.total, points: ms.points })),
+      customZones: elements.customZones.map(z => ({ id: z.id, name: z.name, color: z.color, coords: z.coords })),
+      customLines: elements.customLines.map(l => ({ id: l.id, name: l.name, color: l.color, coords: l.coords })),
+    }
+  };
+  simpleMarkerKeys.forEach(key => {
+    data.elements[key] = elements[key].map(m => ({ id: m.id, name: m.name, lngLat: m.lngLat, emoji: m.emoji }));
+  });
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'planfeu.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function loadPlan(data) {
+  clearAll();
+  if (data.unitMode) unitMode = data.unitMode;
+
+  const e = data.elements;
+  if (!e) return;
+
+  // Artifices
+  (e.artifices || []).forEach(a => {
+    const id = a.id || nextId();
+    const obj = { id, center: a.center, radius: a.radius, name: a.name, lngLat: a.center };
+    elements.artifices.push(obj);
+    if (mapReady) createEmojiMarker(a.center, '🎆', obj, 'artifices');
+  });
+
+  // Polygons
+  (e.zones || []).forEach(z => {
+    const obj = { id: z.id || nextId(), coords: z.coords || z.latlngs?.map(ll => Array.isArray(ll) ? [ll[1]||ll[0], ll[0]||ll[1]] : [ll.lng, ll.lat]) || [], name: z.name };
+    elements.zones.push(obj);
+  });
+  (e.interdits || []).forEach(z => {
+    const obj = { id: z.id || nextId(), coords: z.coords || z.latlngs?.map(ll => Array.isArray(ll) ? [ll[1]||ll[0], ll[0]||ll[1]] : [ll.lng, ll.lat]) || [], name: z.name };
+    elements.interdits.push(obj);
+  });
+  (e.barrieres || []).forEach(b => {
+    const obj = { id: b.id || nextId(), coords: b.coords || b.latlngs?.map(ll => Array.isArray(ll) ? [ll[1]||ll[0], ll[0]||ll[1]] : [ll.lng, ll.lat]) || [], name: b.name };
+    elements.barrieres.push(obj);
+  });
+
+  // Measures
+  (e.mesures || []).forEach(ms => {
+    const pts = ms.points || ms.latlngs || [];
+    if (pts.length < 2) return;
+    let total = ms.total;
+    if (!total) {
+      total = 0;
+      for (let i = 1; i < pts.length; i++) total += haversineDistance(pts[i-1], pts[i]);
+    }
+    elements.mesures.push({ id: ms.id || nextId(), points: pts, total, name: ms.name });
+  });
+
+  // Custom
+  (e.customZones || []).forEach(z => {
+    elements.customZones.push({ id: z.id || nextId(), coords: z.coords || [], name: z.name, color: z.color });
+  });
+  (e.customLines || []).forEach(l => {
+    elements.customLines.push({ id: l.id || nextId(), coords: l.coords || [], name: l.name, color: l.color });
+  });
+
+  // Simple markers
+  const simpleMarkerKeys = ['surveillances','extincteurs','pointsEau','secours','accesSecours','marqueurs'];
+  const modeLookup = {
+    surveillances: { emoji: '👁️', label: 'Surveillance' },
+    extincteurs: { emoji: '🧯', label: 'Extincteur' },
+    pointsEau: { emoji: '💧', label: "Point d'eau" },
+    secours: { emoji: '⛑️', label: 'Secours' },
+    accesSecours: { emoji: '➡️', label: 'Accès secours' },
+    marqueurs: { emoji: '📍', label: 'Marqueur' },
+  };
+  simpleMarkerKeys.forEach(key => {
+    (e[key] || []).forEach(m => {
+      const lngLat = m.lngLat || (m.latlng ? [m.latlng[1], m.latlng[0]] : null);
+      if (!lngLat) return;
+      const cfg = modeLookup[key];
+      const obj = { id: m.id || nextId(), lngLat, name: m.name, emoji: cfg.emoji };
+      elements[key].push(obj);
+      if (mapReady) createEmojiMarker(lngLat, cfg.emoji, obj, key);
+    });
+  });
+
+  if (mapReady) {
+    renderAll();
+  }
+  updateLegend();
+}
+
+// ============================================================
+// PDF EXPORT
+// ============================================================
+document.getElementById('btn-pdf').addEventListener('click', exportPDF);
+
+async function exportPDF() {
+  try {
+    const mapEl = document.getElementById('map');
+    const canvas = await html2canvas(mapEl, { useCORS: true, allowTaint: true, scale: 1.5 });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+    const pageW = 297, pageH = 210;
+    const margin = 10;
+    const legendW = 55;
+    const mapAreaW = pageW - 2 * margin - legendW - 5;
+    const mapAreaH = pageH - 2 * margin - 18;
+
+    pdf.setFontSize(14);
+    pdf.setTextColor(40, 40, 40);
+    pdf.text('Plan de sécurité pyrotechnique', margin, margin + 6);
+
+    const dateStr = new Date().toLocaleDateString('fr-FR');
+    pdf.setFontSize(10);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text(dateStr, pageW - margin, margin + 6, { align: 'right' });
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.9);
+    pdf.addImage(imgData, 'JPEG', margin, margin + 10, mapAreaW, mapAreaH);
+
+    const lx = margin + mapAreaW + 5;
+    let ly = margin + 10;
+    pdf.setFontSize(10);
+    pdf.setTextColor(40, 40, 40);
+    pdf.text('Légende', lx, ly + 5);
+    ly += 10;
+
+    pdf.setFontSize(8);
+    const allItems = [
+      ...elements.artifices.map(a => ({ emoji: '🎆', name: a.name, extra: `Rayon: ${formatDistance(a.radius)}` })),
+      ...elements.zones.map(z => ({ emoji: '👥', name: z.name, extra: null })),
+      ...elements.interdits.map(z => ({ emoji: '🚫', name: z.name, extra: null })),
+      ...elements.barrieres.map(b => ({ emoji: '🪚', name: b.name, extra: null })),
+      ...elements.surveillances.map(s => ({ emoji: '👁️', name: s.name, extra: null })),
+      ...elements.extincteurs.map(e => ({ emoji: '🧯', name: e.name, extra: null })),
+      ...elements.pointsEau.map(p => ({ emoji: '💧', name: p.name, extra: null })),
+      ...elements.secours.map(s => ({ emoji: '⛑️', name: s.name, extra: null })),
+      ...elements.accesSecours.map(a => ({ emoji: '➡️', name: a.name, extra: null })),
+      ...elements.marqueurs.map(m => ({ emoji: '📍', name: m.name, extra: null })),
+      ...elements.mesures.map(ms => ({ emoji: '📏', name: ms.name, extra: `Total: ${formatDistance(ms.total)}` })),
+      ...elements.customZones.map(z => ({ emoji: '🟦', name: z.name, extra: null })),
+      ...elements.customLines.map(l => ({ emoji: '✏️', name: l.name, extra: null })),
+    ];
+
+    allItems.forEach(item => {
+      if (ly > pageH - margin) return;
+      pdf.setTextColor(40, 40, 40);
+      pdf.text(`${item.emoji} ${item.name}`, lx, ly);
+      if (item.extra) {
+        ly += 4;
+        pdf.setTextColor(100, 100, 100);
+        pdf.text(`    ${item.extra}`, lx, ly);
+      }
+      ly += 6;
+    });
+
+    if (allItems.length === 0) {
+      pdf.setTextColor(140, 140, 140);
+      pdf.text('Aucun élément placé', lx, ly);
+    }
+
+    pdf.save('planfeu.pdf');
+  } catch(err) {
+    console.error('PDF export error', err);
+    alert("Erreur lors de l'export PDF");
+  }
+}
+
+// ============================================================
+// INIT
+// ============================================================
+updateLegend();
+updateHelpBar();
+</script>
+</body>
+</html>

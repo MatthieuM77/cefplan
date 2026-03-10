@@ -1668,8 +1668,33 @@ document.getElementById('btn-pdf').addEventListener('click', exportPDF);
 
 async function exportPDF() {
   try {
+    // 1. Capturer le canvas WebGL de MapLibre directement
+    const glCanvas = map.getCanvas();
+    const glDataUrl = glCanvas.toDataURL('image/png');
+
+    // 2. Capturer les marqueurs DOM (emoji) en excluant le canvas WebGL
     const mapEl = document.getElementById('map');
-    const canvas = await html2canvas(mapEl, { useCORS: true, allowTaint: true, scale: 1.5 });
+    const domOverlay = await html2canvas(mapEl, {
+      backgroundColor: null,
+      ignoreElements: el => el.tagName === 'CANVAS',
+      useCORS: true,
+      logging: false
+    });
+
+    // 3. Composer les deux couches sur un canvas final
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = glCanvas.width;
+    finalCanvas.height = glCanvas.height;
+    const ctx = finalCanvas.getContext('2d');
+
+    const glImg = new Image();
+    await new Promise(r => { glImg.onload = r; glImg.src = glDataUrl; });
+    ctx.drawImage(glImg, 0, 0);
+    ctx.drawImage(domOverlay, 0, 0, finalCanvas.width, finalCanvas.height);
+
+    const imgData = finalCanvas.toDataURL('image/jpeg', 0.9);
+
+    // 4. Construire le PDF
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
@@ -1688,9 +1713,9 @@ async function exportPDF() {
     pdf.setTextColor(100, 100, 100);
     pdf.text(dateStr, pageW - margin, margin + 6, { align: 'right' });
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.9);
     pdf.addImage(imgData, 'JPEG', margin, margin + 10, mapAreaW, mapAreaH);
 
+    // 5. Légende avec carrés colorés (jsPDF ne supporte pas les emojis)
     const lx = margin + mapAreaW + 5;
     let ly = margin + 10;
     pdf.setFontSize(10);
@@ -1699,37 +1724,42 @@ async function exportPDF() {
     ly += 10;
 
     pdf.setFontSize(8);
+
+    // Couleurs par type [R, G, B]
     const allItems = [
-      ...elements.artifices.map(a => ({ emoji: '🎆', name: a.name, extra: `Rayon: ${formatDistance(a.radius)}` })),
-      ...elements.zones.map(z => ({ emoji: '👥', name: z.name, extra: null })),
-      ...elements.interdits.map(z => ({ emoji: '🚫', name: z.name, extra: null })),
-      ...elements.barrieres.map(b => ({ emoji: '🪚', name: b.name, extra: null })),
-      ...elements.surveillances.map(s => ({ emoji: '👁️', name: s.name, extra: null })),
-      ...elements.extincteurs.map(e => ({ emoji: '🧯', name: e.name, extra: null })),
-      ...elements.pointsEau.map(p => ({ emoji: '💧', name: p.name, extra: null })),
-      ...elements.secours.map(s => ({ emoji: '⛑️', name: s.name, extra: null })),
-      ...elements.accesSecours.map(a => ({ emoji: '➡️', name: a.name, extra: null })),
-      ...elements.marqueurs.map(m => ({ emoji: '📍', name: m.name, extra: null })),
-      ...elements.mesures.map(ms => ({ emoji: '📏', name: ms.name, extra: `Total: ${formatDistance(ms.total)}` })),
-      ...elements.customZones.map(z => ({ emoji: '🟦', name: z.name, extra: null })),
-      ...elements.customLines.map(l => ({ emoji: '✏️', name: l.name, extra: null })),
+      ...elements.artifices.map(a => ({ color: [255, 107, 0],   label: 'Artifice',       name: a.name, extra: `Rayon: ${formatDistance(a.radius)}` })),
+      ...elements.zones.map(z =>      ({ color: [66, 153, 225],  label: 'Zone pub.',      name: z.name, extra: null })),
+      ...elements.interdits.map(z =>  ({ color: [237, 66, 69],   label: 'Zone interdite', name: z.name, extra: null })),
+      ...elements.barrieres.map(b =>  ({ color: [255, 193, 7],   label: 'Barrière',       name: b.name, extra: null })),
+      ...elements.surveillances.map(s=>({ color: [255, 152, 0],  label: 'Surveillance',   name: s.name, extra: null })),
+      ...elements.extincteurs.map(e =>({ color: [229, 62, 62],   label: 'Extincteur',     name: e.name, extra: null })),
+      ...elements.pointsEau.map(p =>  ({ color: [79, 209, 197],  label: "Point d'eau",    name: p.name, extra: null })),
+      ...elements.secours.map(s =>    ({ color: [72, 187, 120],  label: 'Secours',        name: s.name, extra: null })),
+      ...elements.accesSecours.map(a =>({ color: [104, 211, 145],label: 'Acces secours',  name: a.name, extra: null })),
+      ...elements.marqueurs.map(m =>  ({ color: [160, 174, 192], label: 'Marqueur',       name: m.name, extra: null })),
+      ...elements.mesures.map(ms =>   ({ color: [49, 151, 149],  label: 'Mesure',         name: ms.name, extra: `Total: ${formatDistance(ms.total)}` })),
+      ...elements.customZones.map(z =>({ color: [99, 179, 237],  label: 'Zone custom',    name: z.name, extra: null })),
+      ...elements.customLines.map(l =>({ color: [160, 174, 192], label: 'Ligne custom',   name: l.name, extra: null })),
     ];
 
     allItems.forEach(item => {
       if (ly > pageH - margin) return;
+      const [r, g, b] = item.color;
+      pdf.setFillColor(r, g, b);
+      pdf.rect(lx, ly - 2.8, 3.5, 3.5, 'F');
       pdf.setTextColor(40, 40, 40);
-      pdf.text(`${item.emoji} ${item.name}`, lx, ly);
+      pdf.text(item.name, lx + 5, ly);
       if (item.extra) {
         ly += 4;
         pdf.setTextColor(100, 100, 100);
-        pdf.text(`    ${item.extra}`, lx, ly);
+        pdf.text(`  ${item.extra}`, lx + 5, ly);
       }
       ly += 6;
     });
 
     if (allItems.length === 0) {
       pdf.setTextColor(140, 140, 140);
-      pdf.text('Aucun élément placé', lx, ly);
+      pdf.text('Aucun element place', lx, ly);
     }
 
     pdf.save('planfeu.pdf');

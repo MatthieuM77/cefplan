@@ -451,7 +451,8 @@ const map = new maplibregl.Map({
   style: PLAN_STYLE,
   center: [1.888, 46.603],
   zoom: 6,
-  doubleClickZoom: false
+  doubleClickZoom: false,
+  preserveDrawingBuffer: true
 });
 
 let mapReady = false;
